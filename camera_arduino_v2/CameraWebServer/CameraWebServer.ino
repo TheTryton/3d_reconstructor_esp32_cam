@@ -53,21 +53,25 @@ void save_cred_to_eeprom(const wifi_cred& cred)
 
 wifi_cred get_wifi_cred()
 {
-    Serial.setTimeout(5000);
+    Serial.setTimeout(15000);
     EEPROM.begin(EEPROM_SIZE);
-
+    Serial.println("Please provide wifi ssid and password. After 15 second last saved ssid and password will be used.");
     
     wifi_cred cred;
+    Serial.println("WiFi SSID:");
     int last = Serial.readBytesUntil('\n', cred.ssid, 64);
     if(last == 0)
     {
+        Serial.println("Timeout exceeded loading last saved wifi ssid and password.");
         cred = load_cred_from_eeprom();
     }
     else
     {
       cred.ssid[last] = '\0';
+      Serial.println("WiFi password:");
       cred.password[Serial.readBytesUntil('\n', cred.password, 64)] = '\0';
       save_cred_to_eeprom(cred);
+      Serial.println("WiFi ssid and password saved for future boots.");
     }
     Serial.println(cred.ssid);
     Serial.println(cred.password);
