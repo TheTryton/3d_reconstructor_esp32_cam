@@ -38,6 +38,25 @@ if __name__ == "__main__":
         print("You are running developer mode")
 
     url = 0 # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
+
+    if MODE == USER:
+        while True:
+            print("Provide your IP camera url (eg. http://192.168.0.1:81/stream) or choose existing camera from your computer (eg. 0, 1)")
+
+            url = input()
+
+            if url.isnumeric():
+                url = int(url)
+
+            camera = cv.VideoCapture(url)
+            if camera is None or not camera.isOpened():
+                print("WRONG camera url or IP provided")
+            else:
+                break
+    else:
+        camera = cv.VideoCapture(url)
+
+
     print("Loading...")
     vertex_window_name = "Vertex test"
     disparity_window_name = "Disparity test"
@@ -53,7 +72,6 @@ if __name__ == "__main__":
     vis.create_window()
     added = False
     pcd = o3d.geometry.PointCloud()
-    camera = cv.VideoCapture(url)
 
     params["numDisparities"] = 1
     params["blockSize"] = 0
