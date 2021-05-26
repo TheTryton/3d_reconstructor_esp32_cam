@@ -6,8 +6,12 @@ import disparityMap
 import functools
 import open3d as o3d
 import reprojection
+import sys
 
 EPS = 1e6
+USER = "USER"
+DEV = "DEV"
+MODE = USER
 
 def combine_dims(a, i=0, n=1):
   s = list(a.shape)
@@ -28,7 +32,30 @@ def nothing(x):
 
 
 if __name__ == "__main__":
-    url = int(input("Enter camera IP address: "))
+    url = 0  # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
+
+    if len(sys.argv) > 1 and sys.argv[1] == "-dev":
+        MODE = DEV
+        print("You are running developer mode")
+
+    if MODE == USER:
+        while True:
+            print("Provide your IP camera url (eg. http://192.168.0.1:81/stream) or choose existing camera from your computer (eg. 0, 1)")
+
+            url = input()
+
+            if url.isnumeric():
+                url = int(url)
+
+            camera = cv.VideoCapture(url)
+            if camera is None or not camera.isOpened():
+                print("WRONG camera url or IP provided")
+            else:
+                break
+    else:
+        camera = cv.VideoCapture(url)
+
+
     print("Loading...")
     vertex_window_name = "Vertex test"
     disparity_window_name = "Disparity test"
@@ -44,15 +71,9 @@ if __name__ == "__main__":
     vis.create_window()
     added = False
     pcd = o3d.geometry.PointCloud()
-    camera = cv.VideoCapture(url)
-    cv.namedWindow(vertex_window_name, 0)
-    cv.namedWindow(disparity_window_name, 0)
-    cv.namedWindow(left_window_name, 0)
-    cv.namedWindow(right_window_name, 0)
-    cv.namedWindow(settings_window_name, 0)
 
-    params["numDisparities"] = 2
-    params["blockSize"] = 20
+    params["numDisparities"] = 1
+    params["blockSize"] = 0
     params["filterSize"] = 15
     params["filterCap"] = 20
     params["minDisparity"] = 0
@@ -61,6 +82,15 @@ if __name__ == "__main__":
     params["speckleWindowSize"] = 79
     params["speckleRange"] = 51
     params["button"] = 0
+
+    cv.namedWindow(left_window_name, 0)
+    if MODE == DEV:
+        cv.namedWindow(vertex_window_name, 0)
+        cv.namedWindow(disparity_window_name, 0)
+        cv.namedWindow(right_window_name, 0)
+        cv.namedWindow(settings_window_name, 0)
+    else:
+        params["button"] = 1
 
     ret, frame = camera.read()
 
@@ -99,19 +129,20 @@ if __name__ == "__main__":
         end = time.time()
         frame_left = np.copy(frame_right)
         frame_right = np.copy(frame)
-        print(params["button"])
 
         if params["button"] == 1 and not equal(frame_left, frame_right):
             travel_time += end - start
             vertices_frame = vertexDetection.vertex_detection(frame)
             disparity_frame = disparityMap.disparity_map(frame_left, frame_right, params)
 
-            cv.imshow(vertex_window_name, vertices_frame)
-            cv.imshow(disparity_window_name, disparity_frame)
+            if MODE == DEV:
+                cv.imshow(vertex_window_name, vertices_frame)
+                cv.imshow(disparity_window_name, disparity_frame)
 
             points, colors = reprojection.reproject(disparity_frame, frame, travel_time)
-            all_points = points     # np.concatenate((all_points, points[::100]), axis=0)
-            all_colors = colors     # np.concatenate((all_colors, colors[::100]), axis=0)
+            all_points = points     # np.concatenate((all_points, points), axis=0)
+            all_colors = colors     # np.concatenate((all_colors, colors), axis=0)
+
             pcd.points = o3d.utility.Vector3dVector(all_points)
             pcd.colors = o3d.utility.Vector3dVector(all_colors)
 
@@ -123,7 +154,10 @@ if __name__ == "__main__":
 
         print(f"Travel time: {travel_time}")
         cv.imshow(left_window_name, frame_left)
-        cv.imshow(right_window_name, frame_right)
+
+        if MODE == DEV:
+            cv.imshow(right_window_name, frame_right)
+
         print(f"Frame count: {frame_counter}")
 
         k = cv.waitKey(5) & 0xFF
@@ -133,5 +167,6 @@ if __name__ == "__main__":
         vis.poll_events()
         vis.update_renderer()
 
-cv.destroyAllWindows()
+    camera.release()
+    cv.destroyAllWindows()
 
