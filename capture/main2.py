@@ -24,6 +24,7 @@ def equal(mat_a, mat_b):
         return False
     diff = np.sum(mat_a - mat_b, axis=0)
     diff = np.sum(diff, axis=0)
+    # print(diff)
     return diff[0] <= EPS or diff[1] <= EPS or diff[2] <= EPS
 
 
@@ -32,7 +33,7 @@ def nothing(x):
 
 
 if __name__ == "__main__":
-    url = 0  # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
+    url = 0     # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
 
     if len(sys.argv) > 1 and sys.argv[1] == "-dev":
         MODE = DEV
@@ -43,6 +44,7 @@ if __name__ == "__main__":
             print("Provide your IP camera url (eg. http://192.168.0.1:81/stream) or choose existing camera from your computer (eg. 0, 1)")
 
             url = input()
+            print("Loading...")
 
             if url.isnumeric():
                 url = int(url)
@@ -53,10 +55,9 @@ if __name__ == "__main__":
             else:
                 break
     else:
+        print("Loading...")
         camera = cv.VideoCapture(url)
 
-
-    print("Loading...")
     vertex_window_name = "Vertex test"
     disparity_window_name = "Disparity test"
     left_window_name = "Left"
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     params["speckleWindowSize"] = 79
     params["speckleRange"] = 51
     params["button"] = 0
+    params["reset"] = 0
 
     cv.namedWindow(left_window_name, 0)
     if MODE == DEV:
@@ -89,8 +91,6 @@ if __name__ == "__main__":
         cv.namedWindow(disparity_window_name, 0)
         cv.namedWindow(right_window_name, 0)
         cv.namedWindow(settings_window_name, 0)
-    else:
-        params["button"] = 1
 
     ret, frame = camera.read()
 
@@ -107,7 +107,6 @@ if __name__ == "__main__":
     def callback(name, val):
         params[name] = val
 
-    cv.createTrackbar("button", settings_window_name, params["button"], 1, lambda val: callback("button", val))
     cv.createTrackbar("PreFilterSize", settings_window_name, params["filterSize"], 256, lambda val: callback("filterSize", val))
     cv.createTrackbar("PreFilterCap", settings_window_name, params["filterCap"], 63, lambda val: callback("filterCap", val))
     cv.createTrackbar("NumDisparities", settings_window_name, params["numDisparities"], 256, lambda val: callback("numDisparities", val))
@@ -120,11 +119,20 @@ if __name__ == "__main__":
     cv.createTrackbar("SpeckleRange", settings_window_name, params["speckleRange"], 256, lambda val: callback("speckleRange", val))
 
     while True:
+        cv.createTrackbar("Scan", left_window_name, params["button"], 1, lambda val: callback("button", val))
+        cv.createTrackbar("Reset", left_window_name, params["reset"], 1, lambda val: callback("reset", val))
         start = end
         ret, frame = camera.read()
         if not ret:
             print("NO FRAME!")
             exit(1)
+
+        if params["reset"] == 1:
+            all_points = np.ndarray(shape=(0, 3), dtype=float)
+            all_colors = np.ndarray(shape=(0, 3), dtype=float)
+            pcd.points = o3d.utility.Vector3dVector(all_points)
+            pcd.colors = o3d.utility.Vector3dVector(all_colors)
+            params["reset"] = 0
 
         end = time.time()
         frame_left = np.copy(frame_right)
@@ -134,14 +142,21 @@ if __name__ == "__main__":
             travel_time += end - start
             vertices_frame = vertexDetection.vertex_detection(frame)
             disparity_frame = disparityMap.disparity_map(frame_left, frame_right, params)
+            disparity_frame.fill(2)
 
             if MODE == DEV:
                 cv.imshow(vertex_window_name, vertices_frame)
                 cv.imshow(disparity_window_name, disparity_frame)
 
-            points, colors = reprojection.reproject(disparity_frame, frame, travel_time, vertices_frame)
-            all_points = points     # np.concatenate((all_points, points), axis=0)
-            all_colors = colors     # np.concatenate((all_colors, colors), axis=0)
+            frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+            center_color = frame[frame.shape[0] // 2, frame.shape[1] // 2]
+            lower_bound = center_color - 10
+            upper_bound = center_color + 10
+            mask = cv.inRange(frame, lower_bound, upper_bound)
+
+            points, colors = reprojection.reproject(disparity_frame, frame, travel_time, vertices_frame, mask)
+            all_points = np.concatenate((all_points, points), axis=0)
+            all_colors = np.concatenate((all_colors, colors), axis=0)
 
             pcd.points = o3d.utility.Vector3dVector(all_points)
             pcd.colors = o3d.utility.Vector3dVector(all_colors)
@@ -152,13 +167,13 @@ if __name__ == "__main__":
             else:
                 vis.update_geometry(pcd)
 
-        print(f"Travel time: {travel_time}")
+        # print(f"Travel time: {travel_time}")
         cv.imshow(left_window_name, frame_left)
 
         if MODE == DEV:
             cv.imshow(right_window_name, frame_right)
 
-        print(f"Frame count: {frame_counter}")
+        # print(f"Frame count: {frame_counter}")
 
         k = cv.waitKey(5) & 0xFF
         if k == 27:
