@@ -32,12 +32,11 @@ def nothing(x):
 
 
 if __name__ == "__main__":
-    print(f"Arguments count: {len(sys.argv)}")
+    url = 0  # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
+
     if len(sys.argv) > 1 and sys.argv[1] == "-dev":
         MODE = DEV
         print("You are running developer mode")
-
-    url = 0 # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
 
     if MODE == USER:
         while True:
