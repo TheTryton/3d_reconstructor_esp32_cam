@@ -28,7 +28,7 @@ def nothing(x):
 
 
 if __name__ == "__main__":
-    url = int(input("Enter camera IP address: "))
+    url = 0 # "http://192.168.0.111:81/stream" # int(input("Enter camera IP address: "))
     print("Loading...")
     vertex_window_name = "Vertex test"
     disparity_window_name = "Disparity test"
@@ -51,8 +51,8 @@ if __name__ == "__main__":
     cv.namedWindow(right_window_name, 0)
     cv.namedWindow(settings_window_name, 0)
 
-    params["numDisparities"] = 2
-    params["blockSize"] = 20
+    params["numDisparities"] = 1
+    params["blockSize"] = 0
     params["filterSize"] = 15
     params["filterCap"] = 20
     params["minDisparity"] = 0
@@ -99,7 +99,6 @@ if __name__ == "__main__":
         end = time.time()
         frame_left = np.copy(frame_right)
         frame_right = np.copy(frame)
-        print(params["button"])
 
         if params["button"] == 1 and not equal(frame_left, frame_right):
             travel_time += end - start
@@ -110,8 +109,9 @@ if __name__ == "__main__":
             cv.imshow(disparity_window_name, disparity_frame)
 
             points, colors = reprojection.reproject(disparity_frame, frame, travel_time)
-            all_points = points     # np.concatenate((all_points, points[::100]), axis=0)
-            all_colors = colors     # np.concatenate((all_colors, colors[::100]), axis=0)
+            all_points = points     # np.concatenate((all_points, points), axis=0)
+            all_colors = colors     # np.concatenate((all_colors, colors), axis=0)
+
             pcd.points = o3d.utility.Vector3dVector(all_points)
             pcd.colors = o3d.utility.Vector3dVector(all_colors)
 
@@ -133,5 +133,6 @@ if __name__ == "__main__":
         vis.poll_events()
         vis.update_renderer()
 
-cv.destroyAllWindows()
+    camera.release()
+    cv.destroyAllWindows()
 
