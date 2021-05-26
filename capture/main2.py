@@ -139,7 +139,7 @@ if __name__ == "__main__":
                 cv.imshow(vertex_window_name, vertices_frame)
                 cv.imshow(disparity_window_name, disparity_frame)
 
-            points, colors = reprojection.reproject(disparity_frame, frame, travel_time)
+            points, colors = reprojection.reproject(disparity_frame, frame, travel_time, vertices_frame)
             all_points = points     # np.concatenate((all_points, points), axis=0)
             all_colors = colors     # np.concatenate((all_colors, colors), axis=0)
 

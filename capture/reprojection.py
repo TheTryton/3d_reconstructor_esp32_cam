@@ -26,7 +26,7 @@ Q = np.array([[1,0,0,0],
 #                [0, 0, 9.22664093e-01, 0]])
 
 
-def reproject(disparity_frame, frame, travel_time):
+def reproject(disparity_frame, frame, travel_time, vertices_frame):
     #model_transform = common_math.create_model_transform_matrix(T, theta)
     Tr = np.array([0, TRAIN_HEIGHT, -10*RADIUS])
     theta = common_math.calculate_rotation_angle(travel_time, LAP_TIME)
@@ -62,8 +62,10 @@ def reproject(disparity_frame, frame, travel_time):
 
     R = Ry(-theta)
 
-    output_points = points[mask]
-    output_colors = frame[mask] / 255
+    vertices_frame = vertices_frame > 0
+
+    output_points = points[vertices_frame]          # points[mask]
+    output_colors = frame[vertices_frame] / 255     # frame[mask] / 255
     C = np.array([-frame.shape[0] // 2, frame.shape[1] // 2, 0.])
     output_points = ((output_points + C) @ Ry(m.pi) - Tr) @ R
     #
