@@ -1,16 +1,13 @@
 import cv2 as cv
 import numpy as np
 
+
 def disparity_map(frame_left, frame_right, params):
     sigma = 3
     k = (sigma * 5) | 1
 
-    # dim = (640, 360)
     g1 = np.copy(frame_left)
     g2 = np.copy(frame_right)
-
-    # g1 = cv.resize(frame_left, dim)
-    # g2 = cv.resize(frame_right, dim)
 
     g1 = cv.GaussianBlur(g1, (k, k), sigmaX=sigma, sigmaY=sigma)
     g2 = cv.GaussianBlur(g2, (k, k), sigmaX=sigma, sigmaY=sigma)

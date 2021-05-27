@@ -13,12 +13,4 @@ def vertex_detection(frame):
     edges = cv.Canny(frame_gray, threshold1=50, threshold2=200)
     contours, hierarchy = cv.findContours(edges, mode=cv.RETR_TREE, method=cv.CHAIN_APPROX_SIMPLE)
 
-    # frame_copy = np.copy(frame)
-    #
-    # for i in range(len(contours)):
-    #     contours[i] = cv.approxPolyDP(contours[i], epsilon=3, closed=True)
-    #     color = (rng.randint(0,256), rng.randint(0,256), rng.randint(0,256))
-    #     for point in contours[i]:
-    #         cv.drawMarker(frame_copy, (point[0][0], point[0][1]), color=color, markerType=cv.MARKER_SQUARE, thickness=1)
-    #     cv.drawContours(frame_copy, contours, i, color, 2, cv.LINE_8, hierarchy, 0)
     return frame_gray

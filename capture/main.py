@@ -1,157 +1,202 @@
-import cv2 as cv
 import numpy as np
+import cv2 as cv
+import time as time
+import vertexDetection
+import disparityMap
+import functools
 import open3d as o3d
-import math as m
-import time
+import reprojection
+import sys
+
+EPS = 13000000
+USER = "USER"
+DEV = "DEV"
+MODE = USER
 
 
-def Rx(theta):
-    return np.matrix([[1, 0, 0],
-                      [0, m.cos(theta), -m.sin(theta)],
-                      [0, m.sin(theta), m.cos(theta)]])
+def combine_dims(a, i=0, n=1):
+  s = list(a.shape)
+  combined = functools.reduce(lambda x, y: x*y, s[i:i+n+1])
+  return np.reshape(a, s[:i] + [combined] + s[i+n+1:])
 
 
-def Ry(theta):
-    return np.matrix([[m.cos(theta), 0, m.sin(theta)],
-                      [0, 1, 0],
-                      [-m.sin(theta), 0, m.cos(theta)]])
+def equal(mat_a, mat_b):
+    if mat_a.shape != mat_b.shape:
+        return False
+    diff = np.sum(mat_a - mat_b, axis=0)
+    diff = np.sum(diff, axis=0)
+    return diff[0] <= EPS or diff[1] <= EPS or diff[2] <= EPS
 
 
-def Rz(theta):
-    return np.matrix([[m.cos(theta), -m.sin(theta), 0],
-                      [m.sin(theta), m.cos(theta), 0],
-                      [0, 0, 1]])
+def nothing(x):
+    pass
 
 
-def calc_theta(t, lap_time):
-    return t / lap_time * 2 * m.pi
+if __name__ == "__main__":
+    url = "http://192.168.0.111:81/stream"
 
+    if len(sys.argv) > 1 and sys.argv[1] == "-dev":
+        MODE = DEV
+        print("You are running developer mode")
 
-url = 'capture.mp4'
-frame_length = 30 * 4
-cframe = 0
-delta_angle = 2 * m.pi / (frame_length - 1)
-curr_angle = 0
-vector = np.array([0, 0, 1])
-imw = 640
-imh = 480
+    if MODE == USER:
+        while True:
+            print("Provide your IP camera url (eg. http://192.168.0.1:81/stream) "
+                  "or choose existing camera from your computer (eg. 0, 1)")
 
-all_points = np.ndarray(shape=(0, 3), dtype=float)
-all_colors = np.ndarray(shape=(0, 3), dtype=float)
-cap = cv.VideoCapture(url)
-counter = 0
-o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Debug)
-vis = o3d.visualization.Visualizer()
-vis.create_window()
-pcd = o3d.geometry.PointCloud()
-added = False
+            url = input()
+            print("Exit by pressing ESC while focused on camera window")
+            print("Loading...")
 
-dist = 20
-lap = 3
-t = 0
+            if url.isnumeric():
+                url = int(url)
 
-Q = np.matrix([[1.00000000e+00, 0.00000000e+00, 0.00000000e+00, -5.62774048e+02],
-               [0.00000000e+00, 1.00000000e+00, 0.00000000e+00, -3.84172371e+02],
-               [0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.22276703e+03],
-               [0.00000000e+00, 0.00000000e+00, 9.22664093e-01, -0.00000000e+00]])
-start = time.time()
+            camera = cv.VideoCapture(url)
+            if camera is None or not camera.isOpened():
+                print("WRONG camera url or IP provided")
+            else:
+                break
+    else:
+        print("Provide your IP camera url (eg. http://192.168.0.1:81/stream) or "
+              "choose existing camera from your computer (eg. 0, 1)")
+        url = input()
+        if url.isnumeric():
+            url = int(url)
 
-while (1):
-    # Take each frame
-    ret, frame = cap.read()
+        print("Exit by pressing ESC while focused on camera window")
+        print("Loading...")
+        camera = cv.VideoCapture(url)
+
+    vertex_window_name = "Vertex test"
+    disparity_window_name = "Disparity test"
+    left_window_name = "Camera"
+    right_window_name = "Right"
+    settings_window_name = "Settings"
+
+    all_points = np.ndarray(shape=(0, 3), dtype=float)
+    all_colors = np.ndarray(shape=(0, 3), dtype=float)
+
+    params = {}
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    added = False
+    pcd = o3d.geometry.PointCloud()
+
+    params["numDisparities"] = 1
+    params["blockSize"] = 0
+    params["filterSize"] = 15
+    params["filterCap"] = 20
+    params["minDisparity"] = 0
+    params["textureThreshold"] = 0
+    params["uniquenessRatio"] = 8
+    params["speckleWindowSize"] = 79
+    params["speckleRange"] = 51
+    params["button"] = 0
+    params["reset"] = 0
+    params["save"] = 0
+
+    cv.namedWindow(left_window_name, 0)
+    if MODE == DEV:
+        cv.namedWindow(vertex_window_name, 0)
+        cv.namedWindow(disparity_window_name, 0)
+        cv.namedWindow(right_window_name, 0)
+        cv.namedWindow(settings_window_name, 0)
+
+    ret, frame = camera.read()
+
+    if not ret:
+        print("NO FRAME!")
+        exit(1)
+
+    frame_right = np.copy(frame)
+    frame_counter = 0
+    travel_time = 0.0
+    start = time.time()
     end = time.time()
-    t = (end - start)
+    saved_models = 1
 
-    if ret:
-        height, width = frame.shape[:2]
-        y = (height - imh) // 2
+    def callback(name, val):
+        params[name] = val
 
-        cropped = frame[y:y + imh, 0:width]
+    cv.createTrackbar("PreFilterSize", settings_window_name, params["filterSize"], 256, lambda val: callback("filterSize", val))
+    cv.createTrackbar("PreFilterCap", settings_window_name, params["filterCap"], 63, lambda val: callback("filterCap", val))
+    cv.createTrackbar("NumDisparities", settings_window_name, params["numDisparities"], 256, lambda val: callback("numDisparities", val))
+    cv.createTrackbar("BlockSize", settings_window_name, params["blockSize"], 256, lambda val: callback("blockSize", val))
+    cv.createTrackbar("FilterSize", settings_window_name, params["filterSize"], 256, lambda val: callback("filterSize", val))
+    cv.createTrackbar("MinDisparity", settings_window_name, params["minDisparity"], 256, lambda val: callback("minDisparity", val))
+    cv.createTrackbar("TextureThreshold", settings_window_name, params["textureThreshold"], 256, lambda val: callback("textureThreshold", val))
+    cv.createTrackbar("UniquenessRatio", settings_window_name, params["uniquenessRatio"], 256, lambda val: callback("uniquenessRatio", val))
+    cv.createTrackbar("SpeckleWindowSize", settings_window_name, params["speckleWindowSize"], 256, lambda val: callback("speckleWindowSize", val))
+    cv.createTrackbar("SpeckleRange", settings_window_name, params["speckleRange"], 256, lambda val: callback("speckleRange", val))
 
-        left = cropped[:, 0:width // 2]  # cv.imread("left.png")#
-        right = cropped[:, width // 2:width]  # cv.imread("right.png")#
+    while True:
+        cv.createTrackbar("Scan", left_window_name, params["button"], 1, lambda val: callback("button", val))
+        cv.createTrackbar("Reset", left_window_name, params["reset"], 1, lambda val: callback("reset", val))
+        cv.createTrackbar("Save", left_window_name, params["save"], 1, lambda val: callback("save", val))
+        start = end
+        ret, frame = camera.read()
+        if not ret:
+            print("NO FRAME!")
+            exit(1)
 
-        # height, width = left.shape[:2]
-
-        imgL = cv.cvtColor(left, cv.COLOR_BGR2GRAY)
-        left_RGB = cv.cvtColor(left, cv.COLOR_BGR2RGB)
-        imgR = cv.cvtColor(right, cv.COLOR_BGR2GRAY)
-
-        stereo = cv.StereoBM_create(
-            numDisparities=64,
-            blockSize=5)
-        disparity = stereo.compute(imgL, imgR)
-        normalized_disparity = cv.normalize(disparity, disparity, alpha=0, beta=255, norm_type=cv.NORM_MINMAX,
-                                            dtype=cv.CV_8U)
-
-        rev_proj_matrix = np.zeros((4, 4))
-
-        left_mat = np.matrix([[1.2213483657167785e+03, 0, 5.2038106031345080e+02],
-                              [0, 1.2227670297198733e+03, 3.9953361672646463e+02],
-                              [0, 0, 1]])
-        right_mat = np.matrix([[1.2213483657167785e+03, 0, 5.2038106031345080e+02],
-                               [0, 1.2227670297198733e+03, 3.9953361672646463e+02],
-                               [0, 0, 1]])
-
-        cv.stereoRectify(cameraMatrix1=left_mat, cameraMatrix2=right_mat,
-                         distCoeffs1=0, distCoeffs2=0,
-                         imageSize=(width, height),
-                         R=np.eye(3), T=np.array([1, 0., 0.]),
-                         R1=None, R2=None,
-                         P1=None, P2=None,
-                         Q=rev_proj_matrix)
-
-        # rev_proj_matrix = np.float32([  [1,0,0,0],
-        #                                [0,-1,0,0],
-        #                                [0,0,24*0.05,0], #Focal length multiplication obtained experimentally.
-        #                                [0,0,0,1]])
-
-        theta = calc_theta(t, lap)
-        R = np.matrix([[m.cos(theta), 0, m.sin(theta)],
-                        [0, 1, 0],
-                        [-m.sin(theta), 0, m.cos(theta)]])
-
-        T = np.array([0, 0 , dist])
-
-        points = cv.reprojectImageTo3D(normalized_disparity, rev_proj_matrix)
-        mind = normalized_disparity.min()
-        maxd = normalized_disparity.max()
-        drange = maxd - mind
-        realmin = mind + drange * 0.2
-        realmax = maxd
-        mask = (normalized_disparity > realmin)  # & (normalized_disparity < realmax)
-
-        output_points = points[mask]
-        output_colors = left_RGB[mask] / 255
-        output_points = (output_points + T) @ R
-        if cframe < frame_length:
-            all_points = np.concatenate((all_points, output_points[::10]), axis=0)
-            all_colors = np.concatenate((all_colors, output_colors[::10]), axis=0)
-        cframe = cframe + 1
-        cv.imshow('left', left)
-        cv.imshow('right', right)
-        cv.imshow('disparity', normalized_disparity)
-
-        k = cv.waitKey(5) & 0xFF
-        if k == 27:
-            break
-        # if k == ord('s'):
-        # output_file = 'reconstructed.ply'
-        # create_output(output_points, output_colors, output_file)
-
-        if counter == 0:
+        if params["reset"] == 1:
+            all_points = np.ndarray(shape=(0, 3), dtype=float)
+            all_colors = np.ndarray(shape=(0, 3), dtype=float)
             pcd.points = o3d.utility.Vector3dVector(all_points)
             pcd.colors = o3d.utility.Vector3dVector(all_colors)
+            params["reset"] = 0
+
+        end = time.time()
+        frame_left = np.copy(frame_right)
+        frame_right = np.copy(frame)
+
+        if params["button"] == 1 and not equal(frame_left, frame_right):
+            travel_time += end - start
+            vertices_frame = vertexDetection.vertex_detection(frame)
+            disparity_frame = disparityMap.disparity_map(frame_left, frame_right, params)
+            disparity_frame.fill(2)
+
+            if MODE == DEV:
+                cv.imshow(vertex_window_name, vertices_frame)
+                cv.imshow(disparity_window_name, disparity_frame)
+
+            frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+            center_color = frame[frame.shape[0] // 2, frame.shape[1] // 2]
+            lower_bound = center_color - 10
+            upper_bound = center_color + 10
+            mask = cv.inRange(frame, lower_bound, upper_bound)
+
+            points, colors = reprojection.reproject(disparity_frame, frame, travel_time, vertices_frame, mask)
+            all_points = np.concatenate((all_points, points), axis=0)
+            all_colors = np.concatenate((all_colors, colors), axis=0)
+
+            pcd.points = o3d.utility.Vector3dVector(all_points)
+            pcd.colors = o3d.utility.Vector3dVector(all_colors)
+
             if not added:
                 added = True
                 vis.add_geometry(pcd)
             else:
                 vis.update_geometry(pcd)
-            vis.poll_events()
-            vis.update_renderer()
-    else:
-        cap.set(cv.CAP_PROP_POS_FRAMES, 0)
-    counter = (counter + 1) % 1
-    curr_angle += delta_angle
 
-cv.destroyAllWindows()
+        # print(f"Travel time: {travel_time}")
+        cv.imshow(left_window_name, frame_left)
+
+        if MODE == DEV:
+            cv.imshow(right_window_name, frame_right)
+
+        if params["save"] == 1:
+            o3d.io.write_point_cloud("res" + str(saved_models) + ".ply", pcd)
+            saved_models += 1
+            params["save"] = 0
+
+        k = cv.waitKey(5) & 0xFF
+        if k == 27:
+            break
+
+        vis.poll_events()
+        vis.update_renderer()
+
+    camera.release()
+    cv.destroyAllWindows()
+
