@@ -166,7 +166,12 @@ if __name__ == "__main__":
             upper_bound = center_color + 10
             mask = cv.inRange(frame, lower_bound, upper_bound)
 
-            points, colors = reprojection.reproject(disparity_frame, frame, travel_time, vertices_frame, mask)
+            points, colors = reprojection.reproject(disparity_frame,
+                                                    frame,
+                                                    travel_time,
+                                                    vertices_frame,
+                                                    mask,
+                                                    mode=MODE)
             all_points = np.concatenate((all_points, points), axis=0)
             all_colors = np.concatenate((all_colors, colors), axis=0)
 
