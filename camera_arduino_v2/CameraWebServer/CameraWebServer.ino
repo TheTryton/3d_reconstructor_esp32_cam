@@ -70,7 +70,7 @@ int read_until_eol(char* buf, int buf_size, unsigned long timeout = UINT_MAX)
 wifi_cred get_wifi_cred()
 {
     EEPROM.begin(EEPROM_SIZE);
-    Serial.println("If you wan't to change wifi ssid and password type Y. (you have 5 sec)");
+    Serial.println("If you want to change wifi ssid and password type Y. (you have 5 sec)");
 
     wifi_cred cred;
 
@@ -91,8 +91,6 @@ wifi_cred get_wifi_cred()
     }
     Serial.println("Connecting to:");
     Serial.println(cred.ssid);
-    Serial.println("with password:");
-    Serial.println(cred.password);
     
     return cred;
 }
@@ -158,7 +156,7 @@ void setup() {
     s->set_saturation(s, -2); // lower the saturation
   }
   // drop down frame size for higher initial frame rate
-  s->set_framesize(s, FRAMESIZE_QVGA);
+  s->set_framesize(s, (framesize_t) 7); // SVGA
 
 #if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
   s->set_vflip(s, 1);
@@ -172,11 +170,11 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("Connected to WiFi!");
 
   startCameraServer();
 
-  Serial.print("Camera Ready! Use 'http://");
+  Serial.print("Camera configuration under address: 'http://");
   Serial.print(WiFi.localIP());
   Serial.println("' to connect");
 }
