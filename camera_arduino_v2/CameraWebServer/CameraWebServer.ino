@@ -1,5 +1,6 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <EEPROM.h>
 
 //
 // WARNING!!! PSRAM IC required for UXGA resolution and high JPEG quality
@@ -19,15 +20,66 @@
 
 #include "camera_pins.h"
 
-const char* ssid = "nazwa_sieci_wifi";
-const char* password = "haslo_do_wifi";
+struct wifi_cred
+{
+  char ssid[64];
+  char password[64];
+};
+
+#define EEPROM_SIZE 128
 
 void startCameraServer();
+
+wifi_cred load_cred_from_eeprom()
+{
+    wifi_cred cred;
+    for(int i=0;i<64;i++)
+    {
+       cred.ssid[i] = EEPROM.read(i);
+       cred.password[i] = EEPROM.read(i + 64);
+    }
+    return cred;
+}
+
+void save_cred_to_eeprom(const wifi_cred& cred)
+{
+    for(int i=0;i<64;i++)
+    {
+       EEPROM.write(i, cred.ssid[i]);
+       EEPROM.write(i + 64, cred.password[i]);
+    }
+    EEPROM.commit();
+}
+
+wifi_cred get_wifi_cred()
+{
+    Serial.setTimeout(5000);
+    EEPROM.begin(EEPROM_SIZE);
+
+    
+    wifi_cred cred;
+    int last = Serial.readBytesUntil('\n', cred.ssid, 64);
+    if(last == 0)
+    {
+        cred = load_cred_from_eeprom();
+    }
+    else
+    {
+      cred.ssid[last] = '\0';
+      cred.password[Serial.readBytesUntil('\n', cred.password, 64)] = '\0';
+      save_cred_to_eeprom(cred);
+    }
+    Serial.println(cred.ssid);
+    Serial.println(cred.password);
+    return cred;
+}
 
 void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
+
+  wifi_cred cred = get_wifi_cred();
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -90,7 +142,7 @@ void setup() {
   s->set_hmirror(s, 1);
 #endif
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(cred.ssid, cred.password);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
