@@ -51,26 +51,49 @@ void save_cred_to_eeprom(const wifi_cred& cred)
     EEPROM.commit();
 }
 
+int read_until_eol(char* buf, int buf_size, unsigned long timeout = UINT_MAX)
+{
+  int i=0;
+  unsigned long start = millis();
+  while(i < buf_size && (millis() - start) < timeout)
+  {
+      if(Serial.available())
+      {
+          char c = Serial.read();
+          if(c == '\r' || c == '\n') break;
+          buf[i++] = c;
+      }
+  }
+  return i;
+}
+
 wifi_cred get_wifi_cred()
 {
-    Serial.setTimeout(5000);
     EEPROM.begin(EEPROM_SIZE);
+    Serial.println("If you wan't to change wifi ssid and password type Y. (you have 5 sec)");
 
-    
     wifi_cred cred;
-    int last = Serial.readBytesUntil('\n', cred.ssid, 64);
-    if(last == 0)
+
+    char c[64];
+    if(read_until_eol(c, 63, 5000) && c[0] == 'Y')
     {
-        cred = load_cred_from_eeprom();
+        Serial.println("WiFi SSID:");
+        cred.ssid[read_until_eol(cred.ssid, 63)] = '\0';
+        Serial.println("WiFi PASSWORD:");
+        cred.password[read_until_eol(cred.password, 63)] = '\0';
+        save_cred_to_eeprom(cred);
+        Serial.println("WiFi ssid and password saved for future boots.");
     }
     else
     {
-      cred.ssid[last] = '\0';
-      cred.password[Serial.readBytesUntil('\n', cred.password, 64)] = '\0';
-      save_cred_to_eeprom(cred);
+        Serial.println("Timeout exceeded loading last saved wifi ssid and password.");
+        cred = load_cred_from_eeprom();
     }
+    Serial.println("Connecting to:");
     Serial.println(cred.ssid);
+    Serial.println("with password:");
     Serial.println(cred.password);
+    
     return cred;
 }
 
